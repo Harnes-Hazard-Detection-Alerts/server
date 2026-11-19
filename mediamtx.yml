@@ -1,0 +1,9 @@
+# MediaMTX broker config for local CCTV simulation.
+# MediaMTX >= v1.20 denies publishing to unconfigured paths by default
+# (error: "path 'x' is not configured" / ffmpeg "400 Bad Request").
+# This file allowlists every path name so start-video-rtsp.sh,
+# start-mac-cam-rtsp.sh, and setup-cctv-rtsp.sh work without edits.
+# Start the broker with:  mediamtx mediamtx.yml   (from repo root)
+logLevel: info
+paths:
+  "~^.*$":

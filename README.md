@@ -140,6 +140,11 @@ Reviewers often ask whether this is a real CCTV. Both are the same pipeline.
 
 You can mix both: keep the three simulated cameras and add one real RTSP — all feed the same detection and fleet.
 
+> **MediaMTX note (macOS `brew install mediamtx`, v1.20+):** start the broker
+> with this repo's config — `mediamtx mediamtx.yml` from the repo root.
+> Without it, publishing fails with `path '...' is not configured`
+> (ffmpeg `400 Bad Request`). The bundled config allowlists all path names.
+
 ### Send a test alert (optional)
 
 Enable `ENABLE_TEST_ALERTS=1` to expose `POST /test/alert`. It follows the same path as real detections:
