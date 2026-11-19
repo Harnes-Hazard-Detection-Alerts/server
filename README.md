@@ -8,6 +8,40 @@ Python backend for the HARNES iOS app. YOLOv8 hazard-zone detection, camera mana
 
 ## How to review
 
+### Fastest — one-command Demo (Mac)
+
+The repo bundles the team's `Scripts/harnes.sh` gate. Option **D → 1**
+(Demo-ready) does everything: checks prerequisites, sets up Postgres +
+`.venv`, fetches the sample video, starts the RTSP producer + server,
+registers the camera, assigns operator `dewi`, and runs a pre-flight check.
+When it prints `SIAP UJI`, just sign in from the app.
+
+```sh
+git clone https://github.com/akhnafal-aban/HARNES-Server.git
+cd HARNES-Server
+
+sh Scripts/harnes.sh          # interactive menu (needs a terminal)
+# → press D, then 1, wait until it prints SIAP UJI
+# Non-interactive equivalent:  sh Scripts/harnes.sh demo
+# Stop everything:             sh Scripts/harnes.sh demo-stop
+```
+
+Then on iPhone (same Wi-Fi) sign in with:
+
+| Role | Username | Password |
+|---|---|---|
+| HSE | `anything` | `anythingcuy06` |
+| Operator | `dewi` | `password-demo-2026` |
+
+Server URL on the Login screen: `http://<Mac-IP>:8080/`
+(the script prints your exact address, e.g. `http://192.168.1.85:8080/`).
+Simulator: `http://localhost:8080/`.
+
+What Demo gives you: one live camera (**Site Depo**), one excavator already
+**Start Operating** by `dewi`, and real alerts flowing — no manual steps.
+
+> Mac-only (`brew`, `scutil`). On Linux / Windows / Docker, use below.
+
 ### Run the local server (any OS, about 3 minutes)
 
 You need Python 3.11+ and either PostgreSQL 14+ or Docker.
