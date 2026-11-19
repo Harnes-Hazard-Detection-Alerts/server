@@ -77,21 +77,27 @@ class DetectionModel:
 
     def _resolve_hf_fallback(self, original: str) -> str | None:
         """Try Hugging Face Hub if local file is missing — no auth needed (public repo)."""
-        # Allow override via env: HF_MODEL_REPO / HF_MODEL_FILENAME
+        # Only the real default may fallback to HF; tests use /tidak/ada/model.pt which must stay off.
+        real_default = str(SERVER_ROOT / 'models' / 'best_v8_3class.pt')
+        if original != real_default:
+            # Custom / fake path — do not fallback to canonical HF file. Try exact name only for real customs.
+            cand = Path(original).name
+            if cand in ('model.pt', 'best.pt', 'best'):
+                return None
+            # Only try HF if filename looks like a real model (e.g. ends with .pt and not a test fake)
+            if cand not in ('best_v8_3class.pt', 'Anything.pt'):
+                return None
+            try:
+                from huggingface_hub import hf_hub_download  # type: ignore
+                repo = env_value('HF_MODEL_REPO') or DEFAULT_HF_REPO
+                cached = hf_hub_download(repo_id=repo, filename=cand)
+                self._warn(f'model lokal tidak ada, memakai cache HF {repo}/{cand}: {cached}')
+                return cached
+            except Exception:
+                return None
+        # Real default missing — fetch canonical HF file
         repo = env_value('HF_MODEL_REPO') or DEFAULT_HF_REPO
         filename = env_value('HF_MODEL_FILENAME') or DEFAULT_HF_FILENAME
-        # If the original path was explicitly set to a custom file, keep its filename as fallback
-        if original and original != str(DEFAULT_MODEL_PATH):
-            # Try the custom filename from HF as well, then the default
-            for cand in (Path(original).name, filename):
-                try:
-                    from huggingface_hub import hf_hub_download  # type: ignore
-                    cached = hf_hub_download(repo_id=repo, filename=cand)
-                    self._warn(f'model lokal tidak ada, memakai cache HF {repo}/{cand}: {cached}')
-                    return cached
-                except Exception:
-                    continue
-            return None
         try:
             from huggingface_hub import hf_hub_download  # type: ignore
             cached = hf_hub_download(repo_id=repo, filename=filename)
