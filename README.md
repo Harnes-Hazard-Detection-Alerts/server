@@ -22,9 +22,14 @@ cd HARNES-Server
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
+# Fetch sample CCTV videos (one-time, ~64 MB, Pexels free-license):
+# — requires `gh` auth for private repos, or works anonymously if repo is public
+.venv/bin/python Tools/fetch_recordings.py
+
 # Create DB + seed demo accounts/cameras (first run only):
-.venv/bin/python Tools/reset_database.py --scenario dev
-.venv/bin/python Tools/seed_demo.py --scenario dev
+.venv/bin/python Tools/reset_database.py --scenario dev --video-dir recordings
+# If you skipped fetch_recordings, seed still works but cameras will be empty
+# — add your own via app (HSE → Cameras → Add RTSP) or re-run with --video-dir.
 
 # Run — binds to all interfaces so a physical iPhone can reach it:
 .venv/bin/python -m Sources.main --host 0.0.0.0 --port 8080 --auto-start-cameras
@@ -102,13 +107,26 @@ curl -X POST http://localhost:8080/test/alert \
   -d '{"equipmentInstanceId":"<id>-eq-1","state":"danger"}'   # danger | safe
 ```
 
+### What the reviewer sees after seeding
+
+`--scenario dev` creates:
+- **3 cameras** — `Site Timur / Barat / Depo` from `recordings/*720p.mp4` (loop, 8 fps, auto-started), visible at `GET /cameras` and in-app **HSE → Cameras**
+- **3 excavators** — one per camera (`Excavator - 1..3`), auto-linked and assigned, already **Start Operating**
+- **3 operators** — `budi/sari/dewi` each bound to one unit + live session, so `PUT /me/operation` gate is open and detections flow to alerts
+- **Alert history** — ~15 incidents over 72h, at `GET /alerts` and live via `GET /events` (SSE) / `GET /ws` (WebSocket)
+
+Without `recordings/`, the same seed creates accounts + equipment but **no cameras** — HSE can still add a camera from the app (`RTSP` or file path) and the fleet appears instantly. No manual DB edits needed.
+
 ### Stopping / resetting
 
 ```sh
 # Stop: Ctrl+C in the server terminal
 
-# Fresh reset (drops DB, re-migrates, re-seeds):
-.venv/bin/python Tools/reset_database.py --scenario dev
+# Fresh reset (drops DB, re-migrates, re-seeds with cameras):
+.venv/bin/python Tools/reset_database.py --scenario dev --video-dir recordings
+
+# Without cameras (accounts only):
+.venv/bin/python Tools/reset_database.py --scenario real
 ```
 
 ---
@@ -186,9 +204,11 @@ tests/                 Behaviour + import-linter architecture guard (test_archit
 |---|---|
 | `Connection refused` from iPhone | Mac and iPhone must be on same Wi-Fi; start server with `--host 0.0.0.0`; use `http://<Mac-IP>:8080/` not `localhost` |
 | `invalidURL` on login | Include `http://` and trailing `/`; private IPs only work on Debug/TestFlight builds |
+| `No cameras` after seed | Run `Tools/fetch_recordings.py` first, then `reset_database.py --video-dir recordings`; or add RTSP via HSE → Cameras |
 | `401` / session expired | Re-seed or re-login; demo sessions last 7 days (`HARNES_SEED_SESSION_DAYS`) |
 | `modelLoaded: false` | Expected without `requirements-ml.txt`; demo cameras/alerts still work |
 | Camera `error` / `fallback` | RTSP producer not running or file moved; re-add via app or `python -m Sources.cameras.cli list` |
+| `fetch_recordings.py` 404 | Private repo — run `gh auth login` first, then re-run; or make repo public |
 
 ---
 
