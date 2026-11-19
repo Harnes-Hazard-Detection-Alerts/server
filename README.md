@@ -2,26 +2,13 @@
 
 Python backend for the HARNES iOS app. YOLOv8 hazard-zone detection, camera management, and alerts over WebSocket, SSE, and APNs.
 
-> Apple reviewers: start here. No Mac required. The server runs on macOS, Linux, and Windows (WSL). If you cannot run anything locally, use the hosted URL from App Review Notes. To test CCTV playback end to end, run it locally. Both paths are below.
+> Apple reviewers: start here. No Mac required — the server runs on macOS, Linux, and Windows (WSL).
 
 ---
 
 ## How to review
 
-### If you have a hosted URL (no setup)
-
-When App Review Notes include a hosted URL, you don't need to start a local server:
-
-1. Open HARNES on iPhone.
-2. On Login, tap **Server Address** and enter the URL from the notes, for example:
-   ```
-   https://harnes-demo.example.com/
-   ```
-3. Sign in with a demo account from the table below.
-
-That server is the same code as this repo, already seeded with cameras and alerts. If the notes don't list a URL, run it locally.
-
-### Run it locally (any OS, about 3 minutes)
+### Run the local server (any OS, about 3 minutes)
 
 You need Python 3.11+ and either PostgreSQL 14+ or Docker.
 
@@ -95,10 +82,8 @@ The iOS Simulator can use `http://localhost:8080/` directly.
    ```
    http://192.168.1.42:8080/
    ```
-   Simulator: `http://localhost:8080/`. Hosted: `https://harnes-demo.example.com/`.
+   Simulator: `http://localhost:8080/`.
 4. Enter a demo account and tap Sign In.
-
-Release builds only accept `https://`. TestFlight and Debug builds also accept `http://` for private addresses (`localhost`, `*.local`, `10.*`, `192.168.*`, `172.16-31.*`). Reviewers on a local network should use the TestFlight build.
 
 ### Demo accounts
 
@@ -221,7 +206,7 @@ tests/                 Behavior and import-linter guard
 | Symptom | Fix |
 |---|---|
 | `Connection refused` from iPhone | Same Wi-Fi, `--host 0.0.0.0`, use `http://<LAN-IP>:8080/` not `localhost` on device |
-| `invalidURL` on login | Include `http://` and trailing `/`. Private IPs work only on Debug/TestFlight |
+| `invalidURL` on login | Include `http://` and trailing `/` |
 | No cameras after seed | Run `Tools/fetch_recordings.py` first, then `reset_database.py --video-dir recordings`. Or add RTSP in HSE → Cameras |
 | `401` or expired | Sign in again. Demo sessions last 7 days (`HARNES_SEED_SESSION_DAYS`) |
 | `modelLoaded: false` | Normal without `requirements-ml.txt`. Demo still works |
