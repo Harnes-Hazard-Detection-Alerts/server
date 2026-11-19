@@ -213,27 +213,6 @@ pip install -r requirements-ml.txt
 
 ---
 
-## Architecture
-
-```
-Sources/core/          RiskEvaluator (meter 4m/6m or pixel fallback), GroundCalibrationV2, hazard hysteresis
-Sources/detection/     YOLOv8 wrapper, lazy import
-Sources/cameras/       CRUD, per-camera thread, MJPEG/RTSP, supervisor
-Sources/api/           HTTP and WebSocket
-Sources/alerts/        Event bus and APNs HTTP/2 JWT
-Sources/assignments/   One active assignment per unit and per operator
-Sources/equipment/     Fleet, zone radius, operation status
-Sources/infrastructure/database/  Provisioning, migrations, backups
-migrations/            Versioned SQL
-models/                Weights, 5.3 MiB
-Tools/                 fetch_recordings.py, seed_demo.py, reset_database.py
-tests/                 Behavior and import-linter guard
-```
-
-`Sources/core` does not import other `Sources` modules. Enforced by `.importlinter`.
-
----
-
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -245,5 +224,3 @@ tests/                 Behavior and import-linter guard
 | `modelLoaded: false` | Normal without `requirements-ml.txt`. Demo still works |
 | `fetch_recordings.py` 404 | Private repo needs `gh auth login`. Alternative: `gh release download recordings-720p --repo akhnafal-aban/HARNES-Server --pattern "*720p*" --dir recordings` |
 | Postgres not running | `docker compose up db`, or `brew services start postgresql@14`, or `sudo service postgresql start` |
-
-Do not commit `.env`, `.secrets/`, `recordings/`, or `*.p8` keys.
