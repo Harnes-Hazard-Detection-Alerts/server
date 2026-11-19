@@ -1,0 +1,7 @@
+# Dependensi ML opsional (deteksi model + pembaca video). CI TIDAK memasang file ini.
+# Pin versi sama dengan HeavyMachineZone-Model/.venv313 — model v8 dilatih dan
+# metriknya (mAP50 0.843; kalibrasi conf 0.40 @ imgsz 1280) divalidasi di versi ini.
+torch==2.14.1
+torchvision==0.29.1
+ultralytics==8.4.188
+opencv-python-headless==5.0.0.93

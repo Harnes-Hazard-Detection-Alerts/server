@@ -1,0 +1,5 @@
+# Dependensi DEV-only (tidak dipasang di CI dasar maupun runtime):
+# pemeriksaan grafik import untuk kontrak arsitektur clean-lite.
+# Jalankan dari AppleApp/Server:  .venv/bin/python -m pip install -r requirements-dev.txt
+#                                 .venv/bin/lint-imports
+import-linter==2.3

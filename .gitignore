@@ -1,0 +1,36 @@
+# Python runtime
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+
+# Env & secrets — never commit
+.env
+.secrets/
+*.p8
+*.key
+*.crt
+auto.crt
+auto.key
+
+# Local data — heavy / machine-specific
+recordings/
+backups/
+*.dump
+
+# Caches
+.ruff_cache/
+.import_linter_cache/
+.mypy_cache/
+.pytest_cache/
+*.log
+
+# macOS / IDE
+.DS_Store
+xcuserdata/
+DerivedData/
+build/
+.swiftpm/
+.venv*/

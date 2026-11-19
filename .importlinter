@@ -1,0 +1,87 @@
+# Kontrak arsitektur clean-lite (CONTEXT.md, 7 Nov 2026).
+# Jalankan dari AppleApp/Server setelah `pip install -r requirements-dev.txt`:
+#   .venv/bin/lint-imports
+# Aturan yang sama dijaga TANPA tool oleh tests/test_architecture.py
+# (guard berjalan di suite unittest biasa, termasuk CI tanpa dependensi dev).
+
+[importlinter]
+root_package = Sources
+
+[importlinter:contract:core-is-domain-floor]
+name = Core adalah lantai domain — tidak boleh mengimpor modul Sources lain
+type = forbidden
+source_modules =
+    Sources.core
+forbidden_modules =
+    Sources.api
+    Sources.alerts
+    Sources.auth
+    Sources.config
+    Sources.detection
+    Sources.infrastructure
+    Sources.main
+    Sources.risk
+    Sources.users
+    Sources.video_input
+
+[importlinter:contract:api-is-http-layer]
+name = API lapisan HTTP — boleh auth + core + users/assignments/devices
+type = forbidden
+allow_indirect_imports = true
+source_modules =
+    Sources.api
+forbidden_modules =
+    Sources.alerts
+    Sources.config
+    Sources.detection
+    Sources.infrastructure
+    Sources.main
+    Sources.risk
+    Sources.video_input
+
+[importlinter:contract:risk-is-thin-delegator]
+name = Risk hanya delegator via core — tidak boleh mengimpor modul fitur/infra
+type = forbidden
+source_modules =
+    Sources.risk
+forbidden_modules =
+    Sources.api
+    Sources.alerts
+    Sources.auth
+    Sources.config
+    Sources.detection
+    Sources.infrastructure
+    Sources.main
+    Sources.users
+    Sources.video_input
+
+[importlinter:contract:video-input-is-source-adapter]
+name = Video input adapter — tidak boleh mengimpor modul fitur/infra (via core saja)
+type = forbidden
+source_modules =
+    Sources.video_input
+forbidden_modules =
+    Sources.api
+    Sources.alerts
+    Sources.auth
+    Sources.detection
+    Sources.infrastructure
+    Sources.main
+    Sources.risk
+    Sources.users
+
+[importlinter:contract:cameras-is-source-adapter]
+name = Cameras adapter — hanya core + video_input reader + infra DB; bukan modul fitur lain
+type = forbidden
+allow_indirect_imports = true
+source_modules =
+    Sources.cameras
+forbidden_modules =
+    Sources.api
+    Sources.alerts
+    Sources.auth
+    Sources.config
+    Sources.detection
+    Sources.main
+    Sources.risk
+    Sources.users
