@@ -1,164 +1,197 @@
-# Server Mac lokal
+# HARNES Server
 
-Jalankan dari root repository:
+Local Python server for the HARNES iOS app — hazard-zone detection (YOLOv8), camera management, and real-time alerts (WebSocket / SSE / APNs).
+
+> **For Apple Reviewers — start here.** The app is fully functional without the server running (`/health` is the only public check), but login, cameras, alerts, and assignments require this server. Follow **Quick Start for Reviewers** below — under 3 minutes on a Mac.
+
+---
+
+## Quick Start for Reviewers
+
+### What you need
+
+- **macOS** with **Python 3.11+** and **PostgreSQL 14+** installed (`brew install python@3.11 postgresql@14`)
+- Both devices on the **same network** (Mac + iPhone), or use the iOS Simulator on the same Mac.
+
+### 1. Start the server (one command)
 
 ```sh
-sh AppleApp/Scripts/start-local.sh --port 8080
+git clone https://github.com/akhnafal-aban/HARNES-Server.git
+cd HARNES-Server
+
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+# Create DB + seed demo accounts/cameras (first run only):
+.venv/bin/python Tools/reset_database.py --scenario dev
+.venv/bin/python Tools/seed_demo.py --scenario dev
+
+# Run — binds to all interfaces so a physical iPhone can reach it:
+.venv/bin/python -m Sources.main --host 0.0.0.0 --port 8080 --auto-start-cameras
 ```
 
-`start-local.sh` menyiapkan dependensi dan database sebelum menjalankan server.
-Untuk menjalankan hanya kerangka server tanpa setup database, gunakan `run-server-local.sh`.
+You should see:
 
-Server menyediakan `/health`, `/auth/*`, `/ws` (kanal live target), `/events` (SSE
-transisi), `GET/POST /users` + `PUT /users/{id}/password` + `PATCH /users/{id}`
-(kelola akun oleh HSE), `/cameras*` (CRUD + start/stop + snapshot + MJPEG),
-`/equipment*` (katalog unit, available-cameras, status, radius per unit, label),
-`/alerts*`, `/me/alerts`, `/me/assignment`, `/me/equipment` + snapshot unit,
-`POST /me/device`, `GET|DELETE /me/devices*`, `GET|POST|DELETE /assignments*`,
-`PUT /me/shift`, `PUT /me/operation`, dan `POST /test/alert`. Assignment adalah
-otorisasi server; routing alert memakai binding shift runtime yang wajib cocok
-dengan assignment aktif.
-Jalankan backend dengan Python dari `.venv`. Autentikasi dan stream memerlukan PostgreSQL; `/health` tetap tersedia tanpa query database.
+```
+Alert server listening on port 8080
+[risk] zona piksel (fallback tanpa kalibrasi)
+```
 
-## Kode
+> **No ML setup needed.** Object detection (`requirements-ml.txt` + `models/best_v8_3class.pt`) is optional. Without it the server still runs — camera feeds and alerts are driven by the seeded demo data. The model file is bundled in `models/` and loads automatically when the ML deps are installed.
 
-- `Sources/core/`: domain murni — kontrak identitas kelas (`Detection`, classId 0/1/2, `CLASS_NAMES`), evaluator transisi zona `RiskEvaluator` (dua mode: **meter** radius confirm 4 m / clear 6 m via kalibrasi ter-inject dan fallback **piksel** box excavator di-inflate 25% — keputusan owner 8 Nov 2026), zona ground-plane `core/zones.py`, state machine histeresis waktu `core/hazard.py` (konfirmasi 0,25 s / clear 0,5 s), port `Detector` (core/ports.py), dan `GroundCalibrationV2` kalibrasi homography piksel ↔ meter (minimal 4 titik, rekomendasi ≥6 agar ada RMS holdout; health-check menolak kolinear/ill-conditioned); modul ini tidak boleh mengimpor modul Sources lain (keputusan arsitektur clean-lite di `CONTEXT.md`, 7 Nov 2026). Identitas equipment antar-frame (tracking) menyusul bersama modulnya.
-- `Sources/main.py`: entry point dan perakitan server.
-- `Sources/config.py`: argumen CLI (`--port`, `--host`, `--video*`, `--calib`, `--zone-radius`; env `ZONE_RADIUS_M`).
-- `Sources/api/`: handler HTTP dan streaming.
-- `Sources/alerts/`: event bus, riwayat/routing shift, dispatcher nonblocking, serta
-  provider APNs HTTP/2 dengan JWT ES256 yang digunakan ulang selama 50 menit.
-- `Sources/detection/`: model YOLO v8 3-kelas (ultralytics, lazy import) dengan filter kelas di inference — default hanya excavator+person (arm disembunyikan; urutan kelas model: 0=excavator, 1=arm, 2=person).
-- `Sources/risk/`: API publik evaluator lama (delegator tipis ke `Sources/core/evaluator.py`; dipertahankan untuk Tools, tests, dan shim `detection.py`).
-- `Sources/cameras/`: kamera = sumber frame yang diproses server (✅ berjalan): CRUD + start/stop playback multi-kamera (satu thread per kamera) + snapshot JPEG raw/annotated (ETag per frame) + feed MJPEG `stream.mjpeg`; `recording` (file) dan `rtsp` (live, sejak 11 Nov — 3× open gagal beruntun → status `error` + healthNote `fallback`; kembali start untuk pulih) sama-sama diproses; CLI `python -m Sources.cameras.cli` (add/list/remove) + flag `--auto-start-cameras`. Frame masuk pipeline normal.
-- `Sources/video_input/`: pembaca video rekaman + thread playback realtime ke `AlertServer.process_frame`.
-- `Sources/auth/`: hashing password scrypt; kebijakan sesi demo — 365 hari default
-  (`HARNES_SESSION_DAYS`), rate-limit login opsional (`HARNES_LOGIN_LIMIT=1`), sesi
-  operator non-eksklusif (`HARNES_OPERATOR_SESSIONS_EXCLUSIVE=1` mengembalikan perilaku
-  produksi satu sesi).
-- `Sources/users/`: perintah lokal pembuatan akun operator/HSE (CLI tanpa signup publik) + `directory.py` — direktori operator untuk HSE (jumlah assignment aktif, device online).
-- `Sources/assignments/`: sumber kebenaran penugasan excavator↔operator. HSE membuat,
-  mengganti, atau mengakhiri assignment; server membatasi satu assignment aktif per
-  unit dan per operator.
-- `Sources/devices/`: CRUD perangkat lama diparkir; registrasi push aktif memakai
-  `/me/device`, sedangkan `/me/shift` menjadi sumber routing operator.
-- `Sources/equipment/`: katalog unit — pendaftaran unit dari kamera (`registry.py`),
-  nama tampilan + nomor kabin (`labels.py`), radius Safety Zone per unit (`zone.py`),
-  dan status operasi (`operation.py`).
-- `Sources/infrastructure/database/`: provisioning lokal, koneksi, migrasi, dan backup PostgreSQL.
-- `migrations/`: SQL berversi untuk `users`, `sessions`, `assignments`, `devices`, `alerts` (+ `alert_deliveries`), `cameras`.
-- `models/`: bobot model deteksi ikut repo (`best_v8_3class.pt`, 5,3 MiB) + dokumentasi versi/kelas/kalibrasinya.
-- `Tools/`: `replay_video.py` (deteksi CLI tanpa server, opsi video beranotasi) dan `events_client.py` (simulasi app HSE menerima alert lewat SSE).
-- `tests/`: pemeriksaan perilaku server + pengawas arsitektur clean-lite (`test_architecture.py`, tanpa dependensi tambahan).
-- `requirements-ml.txt`: dependensi deteksi (torch/ultralytics/opencv) — opsional, dipasang terpisah dari `requirements.txt`.
-- `requirements-dev.txt` + `.importlinter`: kontrak arsitektur untuk pemeriksaan grafik import penuh (dev-only; `lint-imports` dari Server).
-
-`server.py` dan `detection.py` di root hanya mempertahankan entry point/import lama.
-Kode fitur berada di `Sources/`.
-
-### Mengirim alert uji ke iPhone
-
-Aktifkan `ENABLE_TEST_ALERTS=1` hanya saat pengujian, login sebagai HSE, lalu kirim:
+### 2. Verify it is running
 
 ```sh
-curl -X POST http://MacBook-Pro-Jeany.local:8080/test/alert \
+curl http://localhost:8080/health
+# {"status":"ok","modelLoaded": false}  ← ok even without ML deps
+```
+
+Find your Mac's address for the iPhone:
+
+```sh
+ipconfig getifaddr en0          # e.g. 192.168.1.42
+# or
+scutil --ncols 1 --get LocalHostName  # e.g. MacAban.local
+```
+
+### 3. Connect the iOS app
+
+1. Open **HARNES** on iPhone / Simulator.
+2. On the **Login** screen, tap the **Server Address** field (top).
+3. Enter your Mac's URL — **must include scheme and port**:
+   ```
+   http://192.168.1.42:8080/
+   ```
+   or
+   ```
+   http://MacAban.local:8080/
+   ```
+4. Enter a demo account (see below) and tap **Sign In**.
+
+> **Release vs Debug builds:** The App Store build (`Release`) only allows `https://` URLs. The `TestFlight` / `Debug` build also allows `http://` for private-network addresses (`localhost`, `*.local`, `10.*`, `192.168.*`, `172.16-31.*`). Reviewers testing over LAN should use the TestFlight build.
+
+### Demo accounts
+
+Seeded by `Tools/seed_demo.py --scenario dev`. All accounts are active for **7 days** after seeding.
+
+| Username | Password | Role | What you can do |
+|---|---|---|---|
+| `anything` | `anythingcuy06` | **HSE** | Manage operators, cameras, equipment, assignments; view all alerts |
+| `budi` | `password-demo-2026` | Operator | Assigned to a demo excavator, already **Start Operating** |
+| `sari` | `password-demo-2026` | Operator | Same |
+| `dewi` | `password-demo-2026` | Operator | Same |
+
+After login:
+
+- **As HSE (`anything`)** — verify camera list, equipment fleet, operator directory, alert history, and live WebSocket/SSE events without any extra setup. Three demo cameras are pre-registered and three excavators are already operating.
+- **As Operator (`budi`/`sari`/`dewi`)** — verify shift binding, `Start Operating` / `Stop`, personal alerts (`/me/alerts`), and device registration (`POST /me/device`).
+
+### Sending a test alert (optional)
+
+With `ENABLE_TEST_ALERTS=1` the server exposes `POST /test/alert` for manual verification. This goes through the same routing/push/WebSocket as real detections.
+
+```sh
+ENABLE_TEST_ALERTS=1 .venv/bin/python -m Sources.main --host 0.0.0.0 --port 8080 &
+
+TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"anything","password":"anythingcuy06"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['accessToken'])")
+
+curl -X POST http://localhost:8080/test/alert \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"equipmentInstanceId":"unit-01","state":"danger"}'
+  -d '{"equipmentInstanceId":"<id>-eq-1","state":"danger"}'   # danger | safe
 ```
 
-Gunakan `"state":"safe"` untuk mengirim `zone_cleared`. Endpoint ini melewati pipeline
-routing/history/WebSocket/APNs yang sama dengan hasil deteksi dan mengembalikan 404 ketika
-flag tidak diaktifkan.
-
-## Batas implementasi
-
-Deteksi v8 dan pembaca video sudah tersambung ke `process_frame`. Evaluasi zona punya dua mode:
-`--calib <file.calib.json>` mengaktifkan zona meter dengan radius confirm default **4 m** (keputusan owner 8 Nov 2026; ubah lewat `--zone-radius` atau env `ZONE_RADIUS_M`) dan radius clear 6 m (histeresis jarak); tanpa kalibrasi, evaluator fallback ke zona piksel (box excavator di-inflate 25%). Transisi status dikontrol histeresis waktu (core/hazard.py): konfirmasi butuh kehadiran ≥ 0,25 s dan clear butuh ketidakhadiran ≥ 0,5 s — satu frame tunggal tidak pernah mengubah status. Alert masih bertanda
-`simulation: true` sampai identitas equipment tracking final dan kontrak tim disepakati. Riwayat alert berjalan. Assignment permanen sekarang tersimpan di server; binding shift tetap data runtime dan hanya boleh dibuat untuk assignment operator yang aktif. Modul kamera (termasuk `location`), event typed (`zoneStatus` tri-level + `detectionCounts`), zona high-risk ½ radius (`person_high_risk`, mode meter), evidence burst, serta **kelola akun operator dari app** (`POST /users`, `PUT /users/{id}/password`, `PATCH /users/{id}` — reset password mencabut sesi target; nonaktif mengakhiri assignment aktif serta membersihkan device_tokens + shift_bindings; guard anti-nonaktifkan-akun-sendiri) berjalan. M7 berjalan: token device + binding shift, routing `/me/alerts`, WebSocket `/ws`, dan APNs HTTP/2/JWT dengan worker nonblocking; SSE tetap tersedia selama transisi. Yang belum: identitas equipment antar-frame (adapter tracking nyata — `trackId` sudah siap dipakai evaluator), key `.p8` APNs + pembuktian locked-screen pada perangkat fisik (Critical Alerts bukan bagian implementasi saat ini), dan klip evidence (tahap lanjut dari burst JPEG).
-PostgreSQL 18 berjalan langsung di Mac tanpa Docker. Setup membuat `.env` lokal yang dibaca modul database.
-
-## Memasukkan video sebagai CCTV (multi-kamera)
-
-**Jalur cepat tim** — dua langkah terpisah, tidak tumpang-tindih:
-
-1. **Data skenario** (seed + registrasi kamera simulasi): `Scripts/reset-database.sh dev|real`
-   — satu-satunya pintu seed; `Tools/seed_demo.py` tetap SATU sumber pembuatan data.
-   Untuk `dev`, video sampel yang belum ada diunduh otomatis (lewat `gh`) ke
-   `AppleApp/Server/recordings/` (folder terkait; sudah di-gitignore), dan path yang
-   terdaftar di PostgreSQL (`cameras.source`) = path absolut file di folder itu —
-   **tanpa copy/cut/paste manual**. Unduhan berikutnya otomatis dilewati. Video sendiri
-   tetap bisa: taruh di folder itu (awalan nama `pexels-…` sesuai daftar di
-   `Tools/seed_demo.py`) atau lewat env `HARNES_VIDEO_DIR` ke folder lain — path
-   override di-absolutkan sebelum didaftarkan. **Jangan pindah/hapus file selagi
-   kameranya terdaftar** (`python -m Sources.cameras.cli list` untuk melihat);
-   dipindah berarti daftar ulang.
-2. **Start server** (murni — tanpa seed/unduhan; bind default `0.0.0.0` agar iPhone
-   fisik di LAN dan simulator sama-sama bisa akses):
+### Stopping / resetting
 
 ```sh
-sh AppleApp/Scripts/start-site-server.sh
-# env opsional: HARNES_SERVER_PORT (default 8080) · HARNES_SERVER_HOST (default 0.0.0.0;
-#               127.0.0.1 = loopback saja) · HARNES_SEED_SCENARIO=dev|real|prod (seed
-#               eksplisit saat start — jarang perlu; default TIDAK menyeed)
+# Stop: Ctrl+C in the server terminal
+
+# Fresh reset (drops DB, re-migrates, re-seeds):
+.venv/bin/python Tools/reset_database.py --scenario dev
 ```
 
-Cara manual — dari `AppleApp/Server`, kapan pun, tanpa menjalankan server:
+---
+
+## Endpoints
+
+| Group | Method & Path | Notes |
+|---|---|---|
+| Health | `GET /health` | No auth; `modelLoaded` true when YOLO deps installed |
+| Auth | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Bearer token, 7-day demo sessions |
+| Cameras | `GET/POST /cameras`, `POST /cameras/{id}/start\|stop`, `GET /cameras/{id}/snapshot`, `GET /cameras/{id}/stream.mjpeg` | Recording + RTSP sources; auto-start on register |
+| Equipment | `GET /equipment*`, `GET /equipment/{id}/available-cameras` | Fleet registry, Safety Zone radius per unit, cabin labels |
+| Users (HSE) | `GET/POST /users`, `PUT /users/{id}/password`, `PATCH /users/{id}` | Create/reset/disable operators |
+| Assignments | `GET/POST/DELETE /assignments` | One active assignment per unit and per operator |
+| Operator | `GET /me/alerts`, `GET /me/assignment`, `GET /me/equipment`, `PUT /me/shift`, `PUT /me/operation`, `POST /me/device` | Shift binding + operation gate |
+| Alerts | `GET /alerts`, `GET /events` (SSE), `GET /ws` (WebSocket) | Typed `zoneStatus` + `detectionCounts` |
+| Test | `POST /test/alert` | Only when `ENABLE_TEST_ALERTS=1` |
+
+Full contract lives in `migrations/` and `Sources/api/handlers.py`.
+
+---
+
+## Configuration
+
+All keys are optional — the server runs with defaults. Override via `.env` (see `.env.example`) or environment variables.
+
+| Key | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://safety_app:…@localhost:5432/safety_system` | Created by `reset_database.py` |
+| `ZONE_RADIUS_M` | `4` | Safety zone confirm radius (meters); clear radius is 6 m |
+| `ZONE_RADIUS_M` / `--zone-radius` | `4` | Per-unit override via HSE slider (`equipment/zone.py`) |
+| `DETECTION_MODEL_PATH` | `models/best_v8_3class.pt` | Bundled YOLOv8 3-class (excavator/arm/person) |
+| `DETECTION_CONF` | `0.40` | Inference confidence threshold |
+| `DETECTION_IMGSZ` | `1280` | Inference input size |
+| `EVIDENCE_DIR` | system temp | Burst JPEG evidence |
+| `APNS_*` | `mock` | Push — mock by default; set `APNS_MODE` + `.p8` for real APNs |
+| `ENABLE_TEST_ALERTS` | `0` | Enable `POST /test/alert` |
+| `--host` / `--port` | `127.0.0.1:8080` | Use `0.0.0.0` for LAN access |
+| `--calib` | — | `GroundCalibrationV2` `.calib.json` for meter-mode zones |
+| `--auto-start-cameras` | off | Start all recording cameras on boot |
+
+Model deps (optional, not needed for review):
 
 ```sh
-.venv/bin/python -m Sources.cameras.cli add /Volumes/rekaman/site-timur.mp4 \
-    --name "Site Timur" --location "Main Entrance" --fps 8 --loop
-.venv/bin/python -m Sources.cameras.cli list          # lihat id + status
-.venv/bin/python -m Sources.cameras.cli remove <id>   # hapus (id penuh atau prefiks unik)
+.venv/bin/pip install -r requirements-ml.txt
 ```
 
-Alternatif RTSP: video rekaman juga bisa disiarkan sebagai stream RTSP loop
-lewat `Scripts/start-video-rtsp.sh <nama-singkat> [file]` (broker MediaMTX
-sama), dan webcam/iPhone lewat `Scripts/start-mac-cam-rtsp.sh` — keduanya
-mencetak link `rtsp://…:8554/<nama>` siap diinput ke app iOS (sumber
-`cameras.source` rtsp:// diproses `RTSPReader` seperti CCTV IP). Pendaftaran
-kamera di app HSE; CLI di atas tetap tersedia untuk pendaftaran non-app.
+---
 
-Nyalakan/gerakan kamera: register via app/API **langsung streaming**
-(auto-start register, 13 Nov; produser RTSP belum siap → 3× gagal → status
-`error`/healthNote `fallback`, nyalakan ulang dari app). Deteksi model per
-kamera digate status unit-nya (13 Nov): hanya jalan bila ada operator yang
-sedang Start Operating — cache TTL 5 dtk, gagal-baca-DB = fail-open; kamera
-idle streaming tanpa biaya MPS dan snapshot raw tetap tersedia. `POST /cameras/{id}/start` dan `/stop` tetap tersedia untuk nyalakan
-ulang dan mematikan; kamera daftar-CLI mulai idle. Flag lama tetap jalan
-untuk semua-kamera-saat-boot bila mau:
+## Architecture (brief)
 
-```sh
-.venv/bin/python -m Sources.main --auto-start-cameras --port 8080
-# atau lewat script: HARNES_AUTO_START_CAMERAS=1 sh AppleApp/Scripts/start-site-server.sh
+```
+Sources/core/          Pure domain — Detection, RiskEvaluator (meter 4m/6m or pixel fallback),
+                       GroundCalibrationV2 homography, hazard hysteresis (confirm 0.12s / clear 0.75s)
+Sources/detection/     YOLOv8 model wrapper (lazy import)
+Sources/cameras/       CRUD + per-camera playback thread + MJPEG/RTSP + supervisor
+Sources/api/           HTTP handlers + WebSocket
+Sources/alerts/        Event bus + history/routing + APNs HTTP/2 JWT (50-min reuse)
+Sources/assignments/   Single active assignment per unit/operator
+Sources/equipment/     Fleet registry, zone radius, operation status
+Sources/infrastructure/database/  Provisioning, connection, migrations, backups
+migrations/            Versioned SQL (users, sessions, assignments, alerts, cameras)
+models/                Bundled weights (5.3 MiB)
+Tools/                 seed_demo.py (sole data factory), reset_database.py, replay_video.py
+tests/                 Behaviour + import-linter architecture guard (test_architecture.py)
 ```
 
-Kamera yang dijalankan masuk
-pipeline penuh (deteksi → zona → alert → riwayat); `--video <path>` lama tetap tersedia
-untuk satu sumber ad-hoc tanpa registrasi.
-App iOS terintegrasi (login, registrasi push, binding shift, monitoring; alur lengkap:
-`Docs/team-runbook.md`). Server default ke loopback untuk HTTP lokal; penggunaan jaringan memerlukan HTTPS.
-Lihat [setup lokal](../Docs/local-development.md) dan [kontrak](../Contracts/README.md).
+`Sources/core` has no imports from other `Sources` modules (clean-lite contract, enforced by `.importlinter`).
 
-## Deteksi model & simulasi realtime (CLI, tanpa UI)
+---
 
-Model v8 sudah ikut repo (`models/best_v8_3class.pt`) dan dimuat otomatis —
-tidak ada konfigurasi model yang wajib. Yang perlu dipasang hanya dependensinya:
+## Troubleshooting for reviewers
 
-1. Pasang dependensi ML (satu kali):
-   ```sh
-   .venv/bin/python -m pip install -r requirements-ml.txt
-   ```
-   Kunci `DETECTION_*` di `.env` (lihat `.env.example`) hanya untuk menimpa default.
-2. Terminal 1 — server + video rekaman (deteksi realtime, status per frame di CLI):
-   ```sh
-   sh AppleApp/Scripts/run-server-local.sh --video <path>.mp4 --video-fps 8 --video-loop
-   curl -s localhost:8080/health                  # "modelLoaded": true
-   ```
-   Zona meter: tambahkan `--calib <path.calib.json>` (hasil `GroundCalibrationV2` minimal 6 titik) dan
-   opsional `--zone-radius 4` (default 4 m; env `ZONE_RADIUS_M` berlaku juga).
-3. Terminal 2 — simulasi app menerima alert lewat SSE (akun role hse):
-   ```sh
-   .venv/bin/python Tools/events_client.py --username <hse> --password '<password>'
-   ```
-`Tools/replay_video.py <video.mp4> [--annotate out.mp4] [--arm]` menjalankan deteksi tanpa
-server/DB untuk pengecekan cepat model + zona placeholder.
+| Symptom | Fix |
+|---|---|
+| `Connection refused` from iPhone | Mac and iPhone must be on same Wi-Fi; start server with `--host 0.0.0.0`; use `http://<Mac-IP>:8080/` not `localhost` |
+| `invalidURL` on login | Include `http://` and trailing `/`; private IPs only work on Debug/TestFlight builds |
+| `401` / session expired | Re-seed or re-login; demo sessions last 7 days (`HARNES_SEED_SESSION_DAYS`) |
+| `modelLoaded: false` | Expected without `requirements-ml.txt`; demo cameras/alerts still work |
+| Camera `error` / `fallback` | RTSP producer not running or file moved; re-add via app or `python -m Sources.cameras.cli list` |
+
+---
+
+## License
+
+Internal use for HARNES App Review and development. Do not commit `.env`, `.secrets/`, `recordings/`, or `*.p8` keys.
