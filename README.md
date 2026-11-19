@@ -35,7 +35,11 @@ docker compose up --build
 git clone https://github.com/akhnafal-aban/HARNES-Server.git
 cd HARNES-Server
 
+# Needs Python 3.11+ — check with: python3 --version
+# (psycopg 3.3.x is invisible to pip on 3.9 and older; the requirements
+# use >= floors so older Pythons still resolve, but 3.11+ is supported)
 python3 -m venv .venv
+.venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 
 python3 Tools/fetch_recordings.py

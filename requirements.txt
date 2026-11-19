@@ -1,5 +1,8 @@
-psycopg[binary]==3.3.8
-typing_extensions==4.16.0
-httpx[http2]==0.28.1
-PyJWT[crypto]==2.15.1
-numpy==2.4.0
+# Floors, not pins: strict == broke on older Pythons/pip
+# (psycopg 3.3.x needs py3.10+; reviewers on 3.9 only see up to 3.2.x).
+# Code uses only stable psycopg API present since 3.1.
+psycopg[binary]>=3.1
+typing_extensions>=4.12
+httpx[http2]>=0.27
+PyJWT[crypto]>=2.8
+numpy>=1.26
