@@ -65,7 +65,7 @@ Alert server listening on port 8080
 [risk] zona piksel (fallback tanpa kalibrasi)
 ```
 
-Object detection is optional. The repo includes `models/best_v8_3class.pt` (5.3 MiB). It loads automatically if you install `requirements-ml.txt`. Without it, the seeded demo data still drives cameras and alerts.
+Object detection is optional. The repo includes `models/best_v8_3class.pt` (5.3 MiB) and the same file is on Hugging Face `Akhnaf03/HARNES-YOLOv8` (public). If the local file is missing, the server fetches it from HF automatically (needs `huggingface_hub` from `requirements-ml.txt`). Without ML deps, the seeded demo data still drives cameras and alerts.
 
 ### Check that it is running
 
@@ -178,7 +178,7 @@ Defaults work for review. Override with `.env` (see `.env.example`) or environme
 |---|---|---|
 | `DATABASE_URL` | `postgresql://safety_app:…@localhost:5432/safety_system` | Set by `reset_database.py` or `docker-compose.yml` |
 | `ZONE_RADIUS_M` | `4` | Confirm radius in meters. Clear is 6 m |
-| `DETECTION_MODEL_PATH` | `models/best_v8_3class.pt` | Bundled YOLOv8 3-class model |
+| `DETECTION_MODEL_PATH` | `models/best_v8_3class.pt` | Bundled model — or HF `Akhnaf03/HARNES-YOLOv8` if local missing |
 | `DETECTION_CONF` | `0.40` | Confidence threshold |
 | `EVIDENCE_DIR` | system temp | Burst JPEG evidence |
 | `APNS_*` | `mock` | Mock push by default |

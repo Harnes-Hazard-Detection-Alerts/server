@@ -20,8 +20,10 @@ Ultralytics di-import lazy: server tetap hidup tanpa requirements-ml.txt dan
 /health melaporkan modelLoaded=false (fail-open, bukan crash).
 
 Model bawaan ikut repository di `models/best_v8_3class.pt` (5,3 MiB — kecil,
-khas yolo26n). DETECTION_MODEL_PATH hanya perlu diisi untuk menimpa model itu
-(versi eksperimen milik sendiri).
+khas yolo26n) dan juga di Hugging Face `Akhnaf03/HARNES-YOLOv8` (public).
+Jika file lokal tidak ada, server otomatis fetch dari HF (butuh
+`huggingface_hub`, public — tanpa token). DETECTION_MODEL_PATH hanya perlu
+diisi untuk menimpa model itu (versi eksperimen milik sendiri).
 """
 from pathlib import Path
 
@@ -39,6 +41,8 @@ from ..core.detection import (  # noqa: F401
 
 DEFAULT_CLASSES = (CLASS_EXCAVATOR, CLASS_PERSON)  # excavator + person; arm disembunyikan untuk MVP
 DEFAULT_MODEL_PATH = SERVER_ROOT / 'models' / 'best_v8_3class.pt'  # ikut repo (5.3 MiB)
+DEFAULT_HF_REPO = "Akhnaf03/HARNES-YOLOv8"
+DEFAULT_HF_FILENAME = "best_v8_3class.pt"
 
 
 class DetectionModel:
@@ -71,13 +75,45 @@ class DetectionModel:
         self.runtime = None
         self._load()
 
+    def _resolve_hf_fallback(self, original: str) -> str | None:
+        """Try Hugging Face Hub if local file is missing — no auth needed (public repo)."""
+        # Allow override via env: HF_MODEL_REPO / HF_MODEL_FILENAME
+        repo = env_value('HF_MODEL_REPO') or DEFAULT_HF_REPO
+        filename = env_value('HF_MODEL_FILENAME') or DEFAULT_HF_FILENAME
+        # If the original path was explicitly set to a custom file, keep its filename as fallback
+        if original and original != str(DEFAULT_MODEL_PATH):
+            # Try the custom filename from HF as well, then the default
+            for cand in (Path(original).name, filename):
+                try:
+                    from huggingface_hub import hf_hub_download  # type: ignore
+                    cached = hf_hub_download(repo_id=repo, filename=cand)
+                    self._warn(f'model lokal tidak ada, memakai cache HF {repo}/{cand}: {cached}')
+                    return cached
+                except Exception:
+                    continue
+            return None
+        try:
+            from huggingface_hub import hf_hub_download  # type: ignore
+            cached = hf_hub_download(repo_id=repo, filename=filename)
+            self._warn(f'model lokal tidak ada, memakai cache HF {repo}/{filename}: {cached}')
+            return cached
+        except ImportError:
+            self._warn('huggingface_hub belum terpasang (pip install huggingface_hub); deteksi nonaktif.')
+        except Exception as exc:
+            self._warn(f'gagal fetch model dari HF {repo}/{filename}: {exc}')
+        return None
+
     def _load(self):
         if not self.model_path:
             self._warn('DETECTION_MODEL_PATH belum diisi; deteksi nonaktif.')
             return
         if not Path(self.model_path).exists():
-            self._warn(f'model tidak ditemukan: {self.model_path}; deteksi nonaktif.')
-            return
+            hf_path = self._resolve_hf_fallback(self.model_path)
+            if hf_path and Path(hf_path).exists():
+                self.model_path = hf_path
+            else:
+                self._warn(f'model tidak ditemukan: {self.model_path}; deteksi nonaktif.')
+                return
         try:
             from ultralytics import YOLO
         except ImportError:
