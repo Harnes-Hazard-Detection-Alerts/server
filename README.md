@@ -52,7 +52,9 @@ Alert server listening on port 8080
 [risk] zona piksel (fallback tanpa kalibrasi)
 ```
 
-Object detection is optional. The repo includes `models/best_v8_3class.pt` (5.3 MiB) and the same file is on Hugging Face `Akhnaf03/HARNES-YOLOv8` (public). If the local file is missing, the server fetches it from HF automatically (needs `huggingface_hub` from `requirements-ml.txt`). Without ML deps, the seeded demo data still drives cameras and alerts.
+Object detection is optional. The model lives on Hugging Face `Akhnaf03/HARNES-YOLOv8` (public, 5.3 MiB). If not cached locally, the server fetches it from HF automatically (needs `huggingface_hub` from `requirements-ml.txt`). Without ML deps, the seeded demo data still drives cameras and alerts.
+
+> **Internal shortcut:** In the full monorepo this repo was extracted from, `sh AppleApp/Scripts/harnes.sh` is a one-command interactive wrapper (server, CCTV, DB, demo). The steps below are the explicit equivalent for this standalone public repo — more transparent for review and they work without that wrapper.
 
 ### Check that it is running
 
@@ -111,6 +113,28 @@ After signing in:
 - **Alert history** — about 15 incidents from the last 72 hours at `GET /alerts`, plus live `GET /events` (SSE) and `GET /ws` (WebSocket).
 
 Without `recordings/`, the seed still creates accounts and equipment but no cameras. HSE can add one from the app with an RTSP URL and the fleet shows up right away. No direct database edits needed.
+
+### CCTV sources — simulated video vs real RTSP
+
+Reviewers often ask whether this is a real CCTV. Both are the same pipeline.
+
+- **Simulated CCTV (for reviewers without hardware):** The `recordings/*720p.mp4` files are recorded videos played as a loop. The server reads them with the same frame path as a live camera and runs YOLO → zone → alerts. This is how the three demo cameras work — no real camera needed. In the internal monorepo the same is done via `sh AppleApp/Scripts/harnes.sh` → RTSP URL Source → Local Video Input (or `harnes.sh video site-barat <file>`), which publishes the file as `rtsp://127.0.0.1:8554/site-barat`.
+
+- **Real RTSP CCTV (if you have one):** No code change. Add it from the app or API:
+  - **From app (HSE):** Cameras → Add → Type RTSP → enter `rtsp://user:pass@192.168.1.100:554/stream` → Save. The camera auto-starts and appears in `GET /cameras`.
+  - **Via API:**
+    ```sh
+    curl -X POST http://localhost:8080/cameras \
+      -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json" \
+      -d '{"name":"My CCTV","location":"Gate 1","type":"rtsp","source":"rtsp://user:pass@192.168.1.100:554/stream"}'
+    ```
+  - **Via CLI (without app):**
+    ```sh
+    .venv/bin/python -m Sources.cameras.cli add rtsp://user:pass@192.168.1.100:554/stream --name "Gate 1"
+    ```
+  Any IP camera, MediaMTX rebroadcast, or `rtsp://127.0.0.1:8554/...` from `start-video-rtsp.sh` / `start-mac-cam-rtsp.sh` works. The server's RTSP reader and supervisor handle reconnection; `POST /cameras/{id}/start|stop` controls it.
+
+You can mix both: keep the three simulated cameras and add one real RTSP — all feed the same detection and fleet.
 
 ### Send a test alert (optional)
 
