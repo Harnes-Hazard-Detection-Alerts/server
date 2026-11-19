@@ -1,46 +1,48 @@
 # HARNES Server
 
-Local Python server for the HARNES iOS app — hazard-zone detection (YOLOv8), camera management, and real-time alerts (WebSocket / SSE / APNs).
+Python backend for the HARNES iOS app. YOLOv8 hazard-zone detection, camera management, and alerts over WebSocket, SSE, and APNs.
 
-> **For Apple Reviewers — start here.** You do **not** need a Mac. The server runs on **macOS, Linux, or Windows (WSL)**. If you cannot run a local server, use **Option A (hosted)** below — no setup. For full CCTV simulation, use **Option B (local)** — one command with Docker or Python.
+> Apple reviewers: start here. No Mac required. The server runs on macOS, Linux, and Windows (WSL). If you cannot run anything locally, use the hosted URL from App Review Notes. To test CCTV playback end to end, run it locally. Both paths are below.
 
 ---
 
-## Quick Start for Reviewers
+## How to review
 
-### Option A — No setup (hosted demo server)
+### If you have a hosted URL (no setup)
 
-If the submission provides a hosted URL in **App Review Notes**, you do not need to run anything locally:
+When App Review Notes include a hosted URL, you don't need to start a local server:
 
-1. Open **HARNES** on iPhone.
-2. On **Login**, tap **Server Address** and enter the hosted URL from App Review Notes, e.g.:
+1. Open HARNES on iPhone.
+2. On Login, tap **Server Address** and enter the URL from the notes, for example:
    ```
    https://harnes-demo.example.com/
    ```
-3. Sign in with a demo account (see table below).
+3. Sign in with a demo account from the table below.
 
-> The hosted server is the same codebase as this repo, pre-seeded with demo cameras and alerts. If no hosted URL is listed, use Option B.
+That server is the same code as this repo, already seeded with cameras and alerts. If the notes don't list a URL, run it locally.
 
-### Option B — Run locally (any OS, ~3 minutes)
+### Run it locally (any OS, about 3 minutes)
 
-Works on **macOS, Linux, Windows (WSL)**. Requires **Python 3.11+** and **PostgreSQL 14+** *or* **Docker**.
+You need Python 3.11+ and either PostgreSQL 14+ or Docker.
 
-#### B1 — With Docker (simplest, any OS)
+**With Docker — one command:**
 
 ```sh
 git clone https://github.com/akhnafal-aban/HARNES-Server.git
 cd HARNES-Server
 
-# Fetch sample CCTV videos (~64 MB, Pexels free-license, one-time)
-# For private repos: `gh auth login` first, then:
-python3 Tools/fetch_recordings.py   # or: gh release download recordings-720p --repo akhnafal-aban/HARNES-Server --pattern "*720p*" --dir recordings
+# Sample CCTV videos, about 64 MB, Pexels free license. One time only.
+# Private repo: run `gh auth login` first.
+python3 Tools/fetch_recordings.py
+# Alternative:
+# gh release download recordings-720p --repo akhnafal-aban/HARNES-Server --pattern "*720p*" --dir recordings
 
 docker compose up --build
-# → Postgres + server start, DB seeded with 3 cameras, 3 excavators, 3 operators, alert history
-# → Listening on http://localhost:8080
+# Postgres and server come up, seeded with 3 cameras, 3 excavators, 3 operators, and alert history
+# http://localhost:8080
 ```
 
-#### B2 — Without Docker (Python + Postgres)
+**Without Docker:**
 
 ```sh
 git clone https://github.com/akhnafal-aban/HARNES-Server.git
@@ -52,81 +54,82 @@ python3 -m venv .venv
 python3 Tools/fetch_recordings.py
 .venv/bin/python Tools/reset_database.py --scenario dev --video-dir recordings
 
-# Bind to all interfaces so a physical iPhone on the same Wi-Fi can reach it:
+# Allow a physical iPhone on the same Wi-Fi to connect:
 .venv/bin/python -m Sources.main --host 0.0.0.0 --port 8080 --auto-start-cameras
 ```
 
-You should see:
+Expected output:
 
 ```
 Alert server listening on port 8080
 [risk] zona piksel (fallback tanpa kalibrasi)
 ```
 
-> **No ML setup needed.** Object detection (`requirements-ml.txt` + `models/best_v8_3class.pt` 5.3 MiB) is optional. Without it the server still runs — camera feeds and alerts use the seeded demo data. The model loads automatically when ML deps are installed.
+Object detection is optional. The repo includes `models/best_v8_3class.pt` (5.3 MiB). It loads automatically if you install `requirements-ml.txt`. Without it, the seeded demo data still drives cameras and alerts.
 
-### Verify it is running
+### Check that it is running
 
 ```sh
 curl http://localhost:8080/health
-# {"status":"ok","modelLoaded": false}  ← ok even without ML deps
+# {"status":"ok","modelLoaded": false}
 ```
 
-Find your machine's LAN address for a **physical iPhone** (both on same Wi-Fi):
+For a physical iPhone, both devices must be on the same Wi-Fi. Use your machine's LAN address:
 
 ```sh
 # macOS / Linux
 ipconfig getifaddr en0 2>/dev/null || hostname -I | awk '{print $1}'
 # Windows (PowerShell)
 ipconfig | findstr IPv4
-# mDNS (Mac)
+# macOS mDNS name
 scutil --ncols 1 --get LocalHostName  # e.g. MacAban.local
 ```
 
-For **iOS Simulator** on the same machine, `http://localhost:8080/` works.
+The iOS Simulator can use `http://localhost:8080/` directly.
 
-### Connect the iOS app
+### Connect the app
 
-1. Open **HARNES** on iPhone / Simulator.
-2. On **Login**, tap **Server Address** (top field).
-3. Enter the URL — **must include scheme and port, with trailing slash**:
+1. Open HARNES on iPhone or Simulator.
+2. On Login, tap **Server Address** at the top.
+3. Enter the URL with scheme, port, and trailing slash:
    ```
    http://192.168.1.42:8080/
    ```
-   or `http://localhost:8080/` (Simulator) or `https://harnes-demo.example.com/` (hosted)
-4. Enter a demo account and tap **Sign In**.
+   Simulator: `http://localhost:8080/`. Hosted: `https://harnes-demo.example.com/`.
+4. Enter a demo account and tap Sign In.
 
-> **Release vs Debug:** The App Store build (`Release`) only allows `https://`. The `TestFlight` / `Debug` build also allows `http://` for private addresses (`localhost`, `*.local`, `10.*`, `192.168.*`, `172.16-31.*`). Reviewers on LAN should use the TestFlight build.
+Release builds only accept `https://`. TestFlight and Debug builds also accept `http://` for private addresses (`localhost`, `*.local`, `10.*`, `192.168.*`, `172.16-31.*`). Reviewers on a local network should use the TestFlight build.
 
 ### Demo accounts
 
-Seeded by `Tools/seed_demo.py --scenario dev` (or `reset_database.py --scenario dev`). Active for **7 days**.
+Seeded by `Tools/seed_demo.py --scenario dev` or `reset_database.py --scenario dev`. Each stays valid for 7 days.
 
-| Username | Password | Role | Can verify |
+| Username | Password | Role | Good for |
 |---|---|---|---|
-| `anything` | `anythingcuy06` | **HSE** | Cameras, fleet, operator directory, assignments, all alerts |
+| `anything` | `anythingcuy06` | HSE | Cameras, fleet, operators, assignments, all alerts |
 | `budi` | `password-demo-2026` | Operator | Shift binding, Start Operating, personal alerts |
 | `sari` | `password-demo-2026` | Operator | Same |
 | `dewi` | `password-demo-2026` | Operator | Same |
 
-After login:
+After signing in:
 
-- **HSE (`anything`)** — 3 demo cameras + 3 excavators already **Operating**, alert history and live WebSocket/SSE without extra steps.
-- **Operator (`budi`/`sari`/`dewi`)** — already assigned & operating; verify `Start/Stop Operating`, `/me/alerts`, device registration.
+- **HSE (`anything`)** — three demo cameras and three excavators are already Operating. Alert history and live updates over WebSocket and SSE are ready.
+- **Operator (`budi` / `sari` / `dewi`)** — already assigned and operating. Check Start/Stop Operating, `/me/alerts`, and device registration.
 
-### What the reviewer sees after seeding
+### What gets seeded
 
 `--scenario dev --video-dir recordings` creates:
-- **3 cameras** — `Site Timur / Barat / Depo` from `recordings/*720p.mp4` (loop, 8 fps, auto-started) at `GET /cameras` and in-app **HSE → Cameras**. Each supports `snapshot` (JPEG) and `stream.mjpeg`.
-- **3 excavators** — `Excavator - 1..3`, auto-linked and already **Start Operating**
-- **3 operators** — each bound + live session, so the operation gate is open and alerts flow
-- **Alert history** — ~15 incidents over 72h, at `GET /alerts` and live via `GET /events` (SSE) / `GET /ws` (WebSocket)
 
-Without `recordings/`, the same seed creates accounts + equipment but **no cameras** — HSE can still add a camera from the app (RTSP URL or file) and the fleet appears instantly. No manual DB edits needed.
+- **3 cameras** — Site Timur, Barat, and Depo from `recordings/*720p.mp4`. Loop at 8 fps, auto-started. Available at `GET /cameras` and in HSE → Cameras. Each has `snapshot` and `stream.mjpeg`.
+- **3 excavators** — Excavator 1 to 3, linked to the cameras and already Start Operating.
+- **3 operators** — each bound to one unit with a live session, so the operation gate is open and alerts flow.
+- **Alert history** — about 15 incidents from the last 72 hours at `GET /alerts`, plus live `GET /events` (SSE) and `GET /ws` (WebSocket).
 
-### Sending a test alert (optional)
+Without `recordings/`, the seed still creates accounts and equipment but no cameras. HSE can add one from the app with an RTSP URL and the fleet shows up right away. No direct database edits needed.
 
-With `ENABLE_TEST_ALERTS=1` the server exposes `POST /test/alert` (same pipeline as real detections):
+### Send a test alert (optional)
+
+Enable `ENABLE_TEST_ALERTS=1` to expose `POST /test/alert`. It follows the same path as real detections:
 
 ```sh
 ENABLE_TEST_ALERTS=1 .venv/bin/python -m Sources.main --host 0.0.0.0 --port 8080 &
@@ -134,15 +137,14 @@ TOKEN=$(curl -s -X POST http://localhost:8080/auth/login -H 'Content-Type: appli
 curl -X POST http://localhost:8080/test/alert -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"equipmentInstanceId":"<id>-eq-1","state":"danger"}'
 ```
 
-### Stopping / resetting
+### Stop or reset
 
 ```sh
-# Docker:
+# Docker
 docker compose down
-# Fresh with cameras:
-docker compose up --build   # re-seeds automatically
+docker compose up --build   # re-seeds
 
-# Python:
+# Python
 # Ctrl+C to stop
 .venv/bin/python Tools/reset_database.py --scenario dev --video-dir recordings  # with cameras
 .venv/bin/python Tools/reset_database.py --scenario real                        # accounts only
@@ -154,38 +156,38 @@ docker compose up --build   # re-seeds automatically
 
 | Group | Method & Path | Notes |
 |---|---|---|
-| Health | `GET /health` | No auth; `modelLoaded` true when YOLO deps installed |
+| Health | `GET /health` | No auth. `modelLoaded` true when YOLO deps are present |
 | Auth | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Bearer token, 7-day demo sessions |
-| Cameras | `GET/POST /cameras`, `POST /cameras/{id}/start\|stop`, `GET /cameras/{id}/snapshot`, `GET /cameras/{id}/stream.mjpeg` | Recording + RTSP; auto-start on register |
-| Equipment | `GET /equipment*`, `GET /equipment/{id}/available-cameras` | Fleet registry, Safety Zone radius, cabin labels |
-| Users (HSE) | `GET/POST /users`, `PUT /users/{id}/password`, `PATCH /users/{id}` | Create/reset/disable operators |
-| Assignments | `GET/POST/DELETE /assignments` | One active per unit and per operator |
-| Operator | `GET /me/alerts`, `GET /me/assignment`, `GET /me/equipment`, `PUT /me/shift`, `PUT /me/operation`, `POST /me/device` | Shift + operation gate |
-| Alerts | `GET /alerts`, `GET /events` (SSE), `GET /ws` (WebSocket) | Typed `zoneStatus` + `detectionCounts` |
+| Cameras | `GET/POST /cameras`, `POST /cameras/{id}/start\|stop`, `GET /cameras/{id}/snapshot`, `GET /cameras/{id}/stream.mjpeg` | Recording and RTSP, auto-start on register |
+| Equipment | `GET /equipment*`, `GET /equipment/{id}/available-cameras` | Fleet, Safety Zone radius, cabin labels |
+| Users (HSE) | `GET/POST /users`, `PUT /users/{id}/password`, `PATCH /users/{id}` | Create, reset, or disable operators |
+| Assignments | `GET/POST/DELETE /assignments` | One active assignment per unit and per operator |
+| Operator | `GET /me/alerts`, `GET /me/assignment`, `GET /me/equipment`, `PUT /me/shift`, `PUT /me/operation`, `POST /me/device` | Shift and operation gate |
+| Alerts | `GET /alerts`, `GET /events` (SSE), `GET /ws` (WebSocket) | `zoneStatus` and `detectionCounts` |
 | Test | `POST /test/alert` | Only when `ENABLE_TEST_ALERTS=1` |
 
-Full contract in `migrations/` and `Sources/api/handlers.py`.
+Contract details are in `migrations/` and `Sources/api/handlers.py`.
 
 ---
 
 ## Configuration
 
-All keys optional — defaults work for review. Override via `.env` (see `.env.example`) or env vars.
+Defaults work for review. Override with `.env` (see `.env.example`) or environment variables.
 
 | Key | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgresql://safety_app:…@localhost:5432/safety_system` | Set by `reset_database.py` or `docker-compose.yml` |
-| `ZONE_RADIUS_M` | `4` | Safety zone confirm radius (m); clear 6 m |
-| `DETECTION_MODEL_PATH` | `models/best_v8_3class.pt` | Bundled YOLOv8 3-class |
+| `ZONE_RADIUS_M` | `4` | Confirm radius in meters. Clear is 6 m |
+| `DETECTION_MODEL_PATH` | `models/best_v8_3class.pt` | Bundled YOLOv8 3-class model |
 | `DETECTION_CONF` | `0.40` | Confidence threshold |
 | `EVIDENCE_DIR` | system temp | Burst JPEG evidence |
-| `APNS_*` | `mock` | Push — mock by default |
+| `APNS_*` | `mock` | Mock push by default |
 | `ENABLE_TEST_ALERTS` | `0` | Enable `POST /test/alert` |
 | `--host` / `--port` | `127.0.0.1:8080` | Use `0.0.0.0` for LAN |
-| `--calib` | — | `GroundCalibrationV2` `.calib.json` for meter zones |
+| `--calib` | — | `GroundCalibrationV2` `.calib.json` |
 | `--auto-start-cameras` | off | Start recording cameras on boot |
 
-ML deps (optional):
+Optional ML deps:
 
 ```sh
 pip install -r requirements-ml.txt
@@ -193,22 +195,24 @@ pip install -r requirements-ml.txt
 
 ---
 
-## Architecture (brief)
+## Architecture
 
 ```
-Sources/core/          Pure domain — RiskEvaluator (meter 4m/6m or pixel fallback), GroundCalibrationV2, hazard hysteresis
-Sources/detection/     YOLOv8 wrapper (lazy import)
-Sources/cameras/       CRUD + per-camera thread + MJPEG/RTSP + supervisor
-Sources/api/           HTTP + WebSocket
-Sources/alerts/        Event bus + APNs HTTP/2 JWT
-Sources/assignments/   Single active per unit/operator
-Sources/equipment/     Fleet registry, zone radius, operation status
+Sources/core/          RiskEvaluator (meter 4m/6m or pixel fallback), GroundCalibrationV2, hazard hysteresis
+Sources/detection/     YOLOv8 wrapper, lazy import
+Sources/cameras/       CRUD, per-camera thread, MJPEG/RTSP, supervisor
+Sources/api/           HTTP and WebSocket
+Sources/alerts/        Event bus and APNs HTTP/2 JWT
+Sources/assignments/   One active assignment per unit and per operator
+Sources/equipment/     Fleet, zone radius, operation status
 Sources/infrastructure/database/  Provisioning, migrations, backups
 migrations/            Versioned SQL
-models/                Bundled weights (5.3 MiB)
+models/                Weights, 5.3 MiB
 Tools/                 fetch_recordings.py, seed_demo.py, reset_database.py
-tests/                 Behaviour + import-linter guard
+tests/                 Behavior and import-linter guard
 ```
+
+`Sources/core` does not import other `Sources` modules. Enforced by `.importlinter`.
 
 ---
 
@@ -216,16 +220,12 @@ tests/                 Behaviour + import-linter guard
 
 | Symptom | Fix |
 |---|---|
-| `Connection refused` from iPhone | Same Wi-Fi; `--host 0.0.0.0`; use `http://<LAN-IP>:8080/` not `localhost` (physical device) |
-| `invalidURL` on login | Include `http://` and trailing `/`; private IPs only on Debug/TestFlight |
-| `No cameras` after seed | Run `Tools/fetch_recordings.py` first, then `reset_database.py --video-dir recordings`; or add RTSP via HSE → Cameras |
-| `401` / expired | Re-login; demo sessions 7 days (`HARNES_SEED_SESSION_DAYS`) |
-| `modelLoaded: false` | Expected without `requirements-ml.txt`; demo still works |
-| `fetch_recordings.py` 404 | Private repo — `gh auth login` first; or `gh release download recordings-720p --repo akhnafal-aban/HARNES-Server --pattern "*720p*" --dir recordings` |
-| Postgres not running | `docker compose up db` or `brew services start postgresql@14` / `sudo service postgresql start` |
+| `Connection refused` from iPhone | Same Wi-Fi, `--host 0.0.0.0`, use `http://<LAN-IP>:8080/` not `localhost` on device |
+| `invalidURL` on login | Include `http://` and trailing `/`. Private IPs work only on Debug/TestFlight |
+| No cameras after seed | Run `Tools/fetch_recordings.py` first, then `reset_database.py --video-dir recordings`. Or add RTSP in HSE → Cameras |
+| `401` or expired | Sign in again. Demo sessions last 7 days (`HARNES_SEED_SESSION_DAYS`) |
+| `modelLoaded: false` | Normal without `requirements-ml.txt`. Demo still works |
+| `fetch_recordings.py` 404 | Private repo needs `gh auth login`. Alternative: `gh release download recordings-720p --repo akhnafal-aban/HARNES-Server --pattern "*720p*" --dir recordings` |
+| Postgres not running | `docker compose up db`, or `brew services start postgresql@14`, or `sudo service postgresql start` |
 
----
-
-## License
-
-Internal use for HARNES App Review and development. Do not commit `.env`, `.secrets/`, `recordings/`, or `*.p8` keys.
+Do not commit `.env`, `.secrets/`, `recordings/`, or `*.p8` keys.
