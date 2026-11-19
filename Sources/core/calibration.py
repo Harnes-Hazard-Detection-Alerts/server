@@ -28,7 +28,18 @@ import json
 import math
 from pathlib import Path
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:  # server inti jalan tanpa requirements-ml.txt
+    np = None  # type: ignore
+
+
+def _require_numpy():
+    if np is None:
+        raise CalibrationError(
+            'numpy belum terpasang (pip install -r requirements-ml.txt); '
+            'kalibrasi meter tidak tersedia — server tetap jalan mode piksel.')
+    return np
 
 
 class CalibrationError(Exception):
@@ -42,6 +53,7 @@ class GroundCalibrationV2:
     """
 
     def __init__(self, pixel_points, meter_points):
+        _require_numpy()
         px = np.asarray(pixel_points, dtype=np.float64)
         mt = np.asarray(meter_points, dtype=np.float64)
         if px.shape[0] < 4:
@@ -92,6 +104,7 @@ class GroundCalibrationV2:
     @staticmethod
     def _hartley_normalize(pts):
         """Translate centroid ke origin, scale jarak rata-rata ke √2."""
+        _require_numpy()
         c = pts.mean(axis=0)
         d = np.sqrt(((pts - c) ** 2).sum(axis=1)).mean()
         if d < 1e-12:
@@ -105,6 +118,7 @@ class GroundCalibrationV2:
     @staticmethod
     def _build_A(px, mt):
         """Bangun matriks DLT 2n × 9."""
+        _require_numpy()
         n = px.shape[0]
         A = np.zeros((2 * n, 9))
         for i in range(n):
@@ -117,6 +131,7 @@ class GroundCalibrationV2:
     @staticmethod
     def _rms_static(px, mt, H, idx):
         """RMS error proyeksi (meter) untuk subset titik."""
+        _require_numpy()
         if not idx:
             return float('nan')
         errors = []
@@ -131,6 +146,7 @@ class GroundCalibrationV2:
 
     def to_meter(self, x, y):
         """Piksel → meter. Return (X, Y) atau None bila W ≈ 0."""
+        _require_numpy()
         p = np.array([x, y, 1])
         m = self.H @ p
         if abs(m[2]) < 1e-10:
@@ -140,6 +156,7 @@ class GroundCalibrationV2:
     def to_pixel(self, X, Y):
         """Meter → piksel (inverse H). Return (x, y) atau None bila W ≤ 0
         (di belakang kamera / horizon) atau hasil di luar clamp ±10000 px."""
+        _require_numpy()
         H_inv = np.linalg.inv(self.H)
         m = np.array([X, Y, 1])
         p = H_inv @ m
@@ -180,6 +197,7 @@ class GroundCalibrationV2:
 
     def save(self, path):
         """Simpan kalibrasi ke JSON (H, titik, RMS, condition)."""
+        _require_numpy()
         data = {
             'H': self.H.tolist(),
             'pixel_points': self.pixel_points.tolist(),
@@ -193,6 +211,7 @@ class GroundCalibrationV2:
     @classmethod
     def load(cls, path):
         """Muat kalibrasi dari file hasil save()."""
+        _require_numpy()
         d = json.loads(Path(path).read_text())
         obj = cls.__new__(cls)
         obj.H = np.array(d['H'])
@@ -227,8 +246,11 @@ def load_camera_calibrations(directory, cameras):
     mode meter; sisanya tetap zona piksel fallback. Kamera baru tanpa calib
     diabaikan (bukan error) — tambah file lalu restart server.
 
-    Return {camera_id: GroundCalibrationV2} — kosong bila folder tak ada.
+    Return {camera_id: GroundCalibrationV2} — kosong bila folder tak ada
+    atau numpy tak terpasang (fallback piksel).
     """
+    if np is None:
+        return {}
     root = Path(directory)
     if not root.is_dir():
         return {}
