@@ -332,5 +332,27 @@ class CameraHTTPTests(unittest.TestCase):
         self.assertEqual(listing['items'], [])
 
 
+class IdleKeepaliveTests(unittest.TestCase):
+    """Stride keepalive kamera dingin — murni unit, tanpa DB/server."""
+
+    def test_stride_matches_keepalive_rate(self):
+        from Sources.cameras.playback import _idle_keepalive_stride, IDLE_KEEPALIVE_FPS
+        self.assertGreater(IDLE_KEEPALIVE_FPS, 0, 'default harus > 0 (feed tetap hidup)')
+        # 8 fps sumber pada 1 fps keepalive → simpan tiap frame ke-8.
+        self.assertEqual(_idle_keepalive_stride(8.0),
+                         max(1, round(8.0 / IDLE_KEEPALIVE_FPS)))
+        # Sumber lebih lambat dari keepalive → tiap frame tetap disimpan.
+        self.assertEqual(_idle_keepalive_stride(0.5), 1)
+
+    def test_zero_disables_store(self):
+        import Sources.cameras.playback as playback
+        original = playback.IDLE_KEEPALIVE_FPS
+        playback.IDLE_KEEPALIVE_FPS = 0
+        try:
+            self.assertEqual(playback._idle_keepalive_stride(8.0), 0)
+        finally:
+            playback.IDLE_KEEPALIVE_FPS = original
+
+
 if __name__ == '__main__':
     unittest.main()

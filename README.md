@@ -238,6 +238,7 @@ Defaults work for review. Override with `.env` (see `.env.example`) or environme
 | `--host` / `--port` | `127.0.0.1:8080` | Use `0.0.0.0` for LAN |
 | `--calib` | — | `GroundCalibrationV2` `.calib.json` |
 | `--auto-start-cameras` | off | Start recording cameras on boot |
+| `HARNES_IDLE_KEEPALIVE_FPS` | `1` | Idle cameras (no unit operating): snapshot/ring refresh rate. Detector already skipped when idle; `0` freezes last frame |
 
 Optional ML deps:
 

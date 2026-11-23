@@ -31,6 +31,24 @@ RING_BUFFER_FRAMES = 30
 # Operating dari app terasa maksimal segini detik kemudian.
 MODEL_GATE_TTL_S = 5.0
 
+# Kamera dingin (tak ada unit operating) tetap menarik frame agar koneksi RTSP
+# hidup, tapi snapshot/ring-buffer hanya disegar pada laju ini — bukan tiap
+# frame. 8 fps → 1 fps = ~8x lebih sedikit copy/resize/append per detik, dan
+# detector memang sudah dilewati total saat dingin. 0 = bekukan frame terakhir
+# (snapshot basi, stream.mjpeg menutup via fresh()).
+IDLE_KEEPALIVE_FPS = float(os.environ.get('HARNES_IDLE_KEEPALIVE_FPS') or '1.0')
+
+
+def _idle_keepalive_stride(effective_fps):
+    """Co-state frame ke-N yang disimpan saat kamera dingin.
+
+    Return 0 = jangan simpan sama sekali (beku); selain itu simpan tiap
+    frame ke-N (count % stride == 0) agar snapshot/ring segar pada
+    IDLE_KEEPALIVE_FPS."""
+    if IDLE_KEEPALIVE_FPS <= 0:
+        return 0
+    return max(1, round((effective_fps or 1) / IDLE_KEEPALIVE_FPS))
+
 
 # Jeda tick supervisor dan jendela tenang restart RTSP (anti-spam saat
 # produser mati: fallback 3x → tunggu jendela → coba lagi — self-heal).
@@ -238,8 +256,9 @@ class CameraManager:
 
         Konsisten dengan OperationStatus (assignment aktif + sesi hidup −
         binding NULL eksplisit/Stop). Kamera di luar set tetap menarik frame
-        dan menyediakan snapshot raw, tapi detector TIDAK jalan — hemat MPS
-        saat tak ada unit yang difungsikan. Cache TTL MODEL_GATE_TTL_S;
+        (RTSP harus hidup) dan snapshot/ring disegar pada IDLE_KEEPALIVE_FPS,
+        tapi detector TIDAK jalan — hemat MPS saat tak ada unit yang
+        difungsikan. Cache TTL MODEL_GATE_TTL_S;
         kegagalan baca DB = fail-OPEN (None → semua kamera diproses) karena
         proteksi tidak boleh hilang karena kegagalan akses pendukung."""
         now = time.monotonic()
@@ -289,7 +308,9 @@ class CameraManager:
                             break
                         timestamp_ms = epoch0 + ts_ms
                         # Gate model (owner 13 Nov): kamera tanpa unit operating
-                        # dilewati detectornya — snapshot raw tetap tersedia.
+                        # dilewati detectornya. Frame tetap ditarik (RTSP harus
+                        # hidup) tapi snapshot/ring hanya disegar pada
+                        # IDLE_KEEPALIVE_FPS — hemat copy/resize CPU per detik.
                         hot_cameras = self._hot_cameras()
                         hot = hot_cameras is None or camera_id in hot_cameras
                         if hot:
@@ -299,17 +320,23 @@ class CameraManager:
                             det_ms = (time.perf_counter() - t_det) * 1000
                             det_total += det_ms
                             det_worst = max(det_worst, det_ms)
+                            self._store_frame(camera_id, frame, detections,
+                                              timestamp_ms=timestamp_ms)
                         else:
                             detections = ()
                             det_ms = 0.0
+                            stride = _idle_keepalive_stride(reader.effective_fps)
+                            if stride and count % stride == 0:
+                                self._store_frame(camera_id, frame, detections,
+                                                  timestamp_ms=timestamp_ms)
                         if hot != was_hot:
                             state = ('hidup — ada unit operating, deteksi jalan'
                                      if hot else
-                                     'idle — model dilewati (tidak ada unit operating)')
+                                     'idle — model dilewati, snapshot '
+                                     f'{IDLE_KEEPALIVE_FPS:g} fps '
+                                     '(tak ada unit operating)')
                             print(f'[cameras] {camera["name"]}: model {state}', flush=True)
                             was_hot = hot
-                        self._store_frame(camera_id, frame, detections,
-                                          timestamp_ms=timestamp_ms)
                         delay = ((count + 1) / (reader.effective_fps or 1)
                                  - (time.perf_counter() - started))
                         if delay > 0 and not stop_event.wait(delay):
