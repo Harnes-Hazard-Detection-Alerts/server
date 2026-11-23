@@ -55,6 +55,10 @@ def _idle_keepalive_stride(effective_fps):
 SUPERVISOR_INTERVAL_S = float(os.environ.get(
     'HARNES_SUPERVISOR_INTERVAL_S') or '5')
 RTSP_RETRY_S = float(os.environ.get('HARNES_CAMERA_RETRY_S') or '30')
+# Batas atas backoff retry RTSP (kegagalan beruntun: 30 → 60 → 120 … cap).
+# Tanpa cap, kamera yang produsernya mati dicoba tiap 30 dtk selamanya
+# (spam log + DESCRIBE gagal); dengan cap, self-heal tetap jalan tapi tenang.
+RTSP_RETRY_MAX_S = float(os.environ.get('HARNES_CAMERA_RETRY_MAX_S') or '600')
 # Batas "frame beku" sebelum restart dianggap perlu (reader macet tanpa data).
 SUPERVISOR_STALE_MS = 30_000
 
@@ -83,6 +87,8 @@ class CameraManager:
         # (migrasi 017) dijamin oleh reconciliation loop — "start" berubah
         # dari event sekali-tekan menjadi kondisi yang terus dipertahankan.
         self._retry_at = {}        # camera_id -> epoch-ms jendela tenang RTSP
+        self._retry_fails = {}     # camera_id -> kegagalan retry BERUNTUN
+        # (backoff eksponensial; di-nol-kan saat kamera kembali fresh).
         self._sup_thread = None
         self._sup_stop = Event()
         # Seam identitas render (14 Nov): resolver kamera→unit ter-DAFTAR
@@ -204,13 +210,28 @@ class CameraManager:
                       flush=True)
             self._sup_stop.wait(SUPERVISOR_INTERVAL_S)
 
+    def _note_retry(self, camera_id, now_ms):
+        """Jadwalkan ulang percobaan RTSP dengan backoff eksponensial (cap).
+
+        Return (jeda_detik, percobaan_ke). Kegagalan pertama → RTSP_RETRY_S,
+        lalu x2 tiap kegagalan beruntun sampai RTSP_RETRY_MAX_S. Self-heal
+        tetap: produser yang hidup lagi selalu ditemukan paling lambat
+        selebar cap, tanpa spam tiap 30 detik selamanya."""
+        fails = self._retry_fails.get(camera_id, 0)
+        wait_s = min(RTSP_RETRY_S * (2 ** fails), RTSP_RETRY_MAX_S)
+        self._retry_fails[camera_id] = fails + 1
+        self._retry_at[camera_id] = now_ms + int(wait_s * 1000)
+        return wait_s, fails + 1
+
     def reconcile_once(self):
         """Satu tick jaminan intent→runtime.
 
         desired_off + jalan → stop (intent HSE dihormati); desired_on +
-        belum jalan → start; RTSP fallback-error → tunggu jendela retry
-        (anti-spam, self-heal saat produser hidup lagi); RTSP jalan tapi
-        frame beku → restart. Status error/cadence diingat per kamera.
+        belum jalan → start; RTSP fallback-error → backoff eksponensial
+        (self-heal tetap, spam tidak); RTSP jalan tapi frame beku → restart.
+        Status error/cadence diingat per kamera. Server (HTTP/WebSocket/SSE)
+        tidak terpengaruh status kamera apa pun: playback tiap kamera jalan
+        di thread sendiri, gagalnya satu kamera tak menyentuh yang lain.
         """
         if self.connection_factory is None:
             return
@@ -234,17 +255,26 @@ class CameraManager:
                 if (camera['type'] == 'rtsp'
                         and not self.fresh(camera_id, SUPERVISOR_STALE_MS)
                         and now_ms >= self._retry_at.get(camera_id, 0)):
-                    print(f'[supervisor] {camera["name"]}: frame beku — restart',
-                          flush=True)
-                    self._retry_at[camera_id] = now_ms + int(RTSP_RETRY_S * 1000)
+                    wait_s, attempt = self._note_retry(camera_id, now_ms)
+                    print(f'[supervisor] {camera["name"]}: frame beku — restart '
+                          f'(percobaan {attempt}, jeda {wait_s:g}s)', flush=True)
                     self.stop(camera_id)
                     self.start(camera)
+                else:
+                    # Hidup dan segar → hitungan gagal di-nol-kan.
+                    self._retry_fails.pop(camera_id, None)
                 continue
             # desired, belum jalan
             if (camera['type'] == 'rtsp' and camera['status'] == 'error'
                     and now_ms < self._retry_at.get(camera_id, 0)):
                 continue  # jendela tenang — produser RTSP mungkin belum siap
-            if camera['type'] == 'rtsp':
+            if camera['type'] == 'rtsp' and camera['status'] == 'error':
+                wait_s, attempt = self._note_retry(camera_id, now_ms)
+                if attempt > 1:
+                    print(f'[supervisor] {camera["name"]}: produser belum ada — '
+                          f'coba lagi dalam {wait_s:g}s (percobaan {attempt})',
+                          flush=True)
+            elif camera['type'] == 'rtsp':
                 self._retry_at[camera_id] = now_ms + int(RTSP_RETRY_S * 1000)
             print(f'[supervisor] {camera["name"]}: desired — playback dinyalakan',
                   flush=True)

@@ -334,7 +334,6 @@ class CameraHTTPTests(unittest.TestCase):
 
 class IdleKeepaliveTests(unittest.TestCase):
     """Stride keepalive kamera dingin — murni unit, tanpa DB/server."""
-
     def test_stride_matches_keepalive_rate(self):
         from Sources.cameras.playback import _idle_keepalive_stride, IDLE_KEEPALIVE_FPS
         self.assertGreater(IDLE_KEEPALIVE_FPS, 0, 'default harus > 0 (feed tetap hidup)')
@@ -352,6 +351,28 @@ class IdleKeepaliveTests(unittest.TestCase):
             self.assertEqual(playback._idle_keepalive_stride(8.0), 0)
         finally:
             playback.IDLE_KEEPALIVE_FPS = original
+
+
+class RetryBackoffTests(unittest.TestCase):
+    """Backoff retry RTSP — murni unit, tanpa DB/server."""
+
+    def test_backoff_doubles_then_caps(self):
+        import Sources.cameras.playback as playback
+        manager = playback.CameraManager()
+        waits = [manager._note_retry('cam-1', 0)[0]
+                 for _ in range(8)]
+        self.assertEqual(waits[:5], [30.0, 60.0, 120.0, 240.0, 480.0])
+        self.assertEqual(waits[5:], [600.0, 600.0, 600.0],
+                         'cap RTSP_RETRY_MAX_S menahan spam tiap 30 dtk')
+
+    def test_counters_are_per_camera(self):
+        import Sources.cameras.playback as playback
+        manager = playback.CameraManager()
+        manager._note_retry('a', 0)
+        manager._note_retry('a', 0)
+        wait_b, attempt_b = manager._note_retry('b', 0)
+        self.assertEqual((wait_b, attempt_b), (30.0, 1),
+                         'kamera sehat tak ikut backoff kamera mati')
 
 
 if __name__ == '__main__':
